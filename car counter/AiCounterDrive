@@ -12,7 +12,7 @@ class AiCountDrive:
 
         self.model = YOLO('../yolo_weigths/yolov8l.pt')
 
-        self.colours = [(255,56,56),(56,56,255),(56,255,56),(56,255,255)]
+        self.colours = [(255,56,56),(56,56,255),(56,255,56),(155,0,155)]
 
         self.classNames = ["persona", "bicycle", "auto", "moto", "aeroplane", "bus", "train", "camion", "boat",
             "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
@@ -52,14 +52,13 @@ class AiCountDrive:
 
 
     def run_count(self):
-        colours = [(255,56,56),(56,255,56),(56,56,255),(56,255,255)]
         while True:
-            succes, img = self.cap.read() # captura un boleno y un frame
-            img_region = cv2.bitwise_and(img,self.mask) # corto la region de la imagen
+            succes, self.img = self.cap.read() # captura un boleno y un frame
+            img_region = cv2.bitwise_and(self.img,self.mask) # corto la region de la imagen
             
             # imagen o grafico para volverlo mas chevere
             img_graphics = cv2.imread("./graphics.png",cv2.IMREAD_UNCHANGED)
-            img = cvzone.overlayPNG(img,img_graphics,(0,0))
+            self.img = cvzone.overlayPNG(self.img,img_graphics,(0,0))
             
             results = self.model(img_region,stream=True)
             
@@ -73,122 +72,71 @@ class AiCountDrive:
                 for box in boxes:
                     x1,y1,x2,y2=box.xyxy[0]
                     x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
-                    # cv2.rectangle(img,(x1,y1),(x2,y2),(255,0,255),3)
-                    # print(x1,y1,x2,y2)
-                    
-                    # x1,y1,w,h=box.xywh[0]
                     w, h = x2-x1,y2-y1
-                    
                     
                     #confidence
                     conf = math.ceil((box.conf[0]*100))/100
                     print(conf)
-                    
                     
                     # Class name
                     cls = int(box.cls[0])
                     currentClass = self.classNames[cls]
                     
                     match currentClass:
-                        case "auto" | "camion":
-                            cvzone.putTextRect(img,f'{self.classNames[cls]}: {conf}',(max(0,x1),max(35,y1-10)),
-                                            scale=1,thickness=2,offset=3,colorR=colours[0])
-                            current_array = np.array([x1,y1,x2,y2,conf])
-                            detections_car = np.vstack((detections_car,current_array))
+                        case "auto":
+                            detections_car = self.select_class(detections_car,self.classNames[cls],conf,x1,x2,y1,y2,self.colours[0])
                         case "moto":
-                            cvzone.putTextRect(img,f'{self.classNames[cls]}: {conf}',(max(0,x1),max(35,y1-10)),
-                                    scale=1,thickness=2,offset=3,colorR=colours[2])
-                        
-                            current_array = np.array([x1,y1,x2,y2,conf])
-                            detections_moto = np.vstack((detections_moto,current_array))
+                            detections_moto = self.select_class(detections_moto,self.classNames[cls],conf,x1,x2,y1,y2,self.colours[1])
                         case "bus":
-                            cvzone.putTextRect(img,f'{self.classNames[cls]}: {conf}',(max(0,x1),max(35,y1-10)),
-                                    scale=1,thickness=2,offset=3,colorR=colours[1])
-                        
-                            current_array = np.array([x1,y1,x2,y2,conf])
-                            detections_bus = np.vstack((detections_bus,current_array))
-                        # case "camion":
-                        #     cvzone.putTextRect(img,f'{self.classNames[cls]}: {conf}',(max(0,x1),max(35,y1-10)),
-                        #                     scale=1,thickness=2,offset=3,colorR=colours[0])
-                        #     current_array = np.array([x1,y1,x2,y2,conf])
-                        #     detections_car = np.vstack((detections_car,current_array))
+                            detections_bus =  self.select_class(detections_bus,self.classNames[cls],conf,x1,x2,y1,y2,self.colours[2])
+                        case "camion":
+                            detections_truck =  self.select_class(detections_truck,self.classNames[cls],conf,x1,x2,y1,y2,self.colours[3])
                         
                         
             results_tracker_car = self.tracker_car.update(detections_car)
             results_tracker_moto = self.tracker_moto.update(detections_moto)
             results_tracker_bus = self.tracker_bus.update(detections_bus)
-            cv2.line(img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,255,255),5)
+            results_tracker_truck =  self.tracker_truck.update(detections_truck)
+            cv2.line(self.img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,255,255),5)
+
+            self.detection_count(results_tracker_car,self.car_count,self.colours[0])
+            self.detection_count(results_tracker_moto,self.moto_count,self.colours[1])
+            self.detection_count(results_tracker_bus,self.bus_count,self.colours[2])  
+            self.detection_count(results_tracker_truck,self.truck_count,self.colours[3])  
+
+            cv2.putText(self.img,str(len(self.car_count)),(255,100),cv2.FONT_HERSHEY_PLAIN,5,self.colours[0],8)
+            cv2.putText(self.img,str(len(self.moto_count)),(455,100),cv2.FONT_HERSHEY_PLAIN,5,self.colours[1],8)
+            cv2.putText(self.img,str(len(self.bus_count)),(655,100),cv2.FONT_HERSHEY_PLAIN,5,self.colours[2],8)
+            cv2.putText(self.img,str(len(self.truck_count)),(855,100),cv2.FONT_HERSHEY_PLAIN,5,self.colours[3],8)
             
-            for result in results_tracker_car:
-                print("este es el resul",result)
-                x1,y1,x2,y2,id = result
-                x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
-                w, h = x2-x1,y2-y1
-                cvzone.cornerRect(img,(x1,y1,w,h),l=10,rt=5, colorR=(255,56,56), colorC=(255,56,56))
-                
-                cx, cy = x1+w//2, y1+h//2
-                cv2.circle(img,(cx,cy),5,colours[0],cv2.FILLED)
-                
-                if self.limits[0] < cx < self.limits[2] and self.limits[1]-20 < cy < self.limits[1]+20:
-                    if self.car_count.count(id) == 0:
-                        self.car_count.append(id)
-                        cv2.line(img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,0,255),5)
-                
-            for result in results_tracker_moto:
-                print("este es el resul",result)
-                x1,y1,x2,y2,id = result
-                x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
-                w, h = x2-x1,y2-y1
-                cvzone.cornerRect(img,(x1,y1,w,h),l=10,rt=5, colorR=colours[2], colorC=colours[2])
-                
-                cx, cy = x1+w//2, y1+h//2
-                cv2.circle(img,(cx,cy),5,colours[2],cv2.FILLED)
-                
-                if self.limits[0] < cx < self.limits[2] and self.limits[1]-20 < cy < self.limits[1]+20:
-                    if self.moto_count.count(id) == 0:
-                        self.moto_count.append(id)
-                        cv2.line(img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,0,255),5)
-
-            for result in results_tracker_bus:
-                print("este es el resul",result)
-                x1,y1,x2,y2,id = result
-                x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
-                w, h = x2-x1,y2-y1
-                cvzone.cornerRect(img,(x1,y1,w,h),l=10,rt=5, colorR=colours[1], colorC=colours[1])
-                
-                cx, cy = x1+w//2, y1+h//2
-                cv2.circle(img,(cx,cy),5,colours[1],cv2.FILLED)
-                
-                if self.limits[0] < cx < self.limits[2] and self.limits[1]-20 < cy < self.limits[1]+20:
-                    if self.bus_count.count(id) == 0:
-                        self.bus_count.append(id)
-                        cv2.line(img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,0,255),5)
-                
-
-
-            cv2.putText(img,str(len(self.car_count)),(255,100),cv2.FONT_HERSHEY_PLAIN,5,(255,56,56),8)
-            cv2.putText(img,str(len(self.moto_count)),(455,100),cv2.FONT_HERSHEY_PLAIN,5,colours[2],8)
-            cv2.putText(img,str(len(self.bus_count)),(655,100),cv2.FONT_HERSHEY_PLAIN,5,colours[1],8)
-            
-            cv2.imshow("Img", img)
+            cv2.imshow("Img", self.img)
             # cv2.imshow("ImgRegion", img_region)
             cv2.waitKey(1)
 
-def detection_count(self,results_tracker):
-    for result in results_tracker:
-                print("este es el resul",result)
-                x1,y1,x2,y2,id = result
-                x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
-                w, h = x2-x1,y2-y1
-                cvzone.cornerRect(img,(x1,y1,w,h),l=10,rt=5, colorR=colours[1], colorC=colours[1])
-                
-                cx, cy = x1+w//2, y1+h//2
-                cv2.circle(img,(cx,cy),5,colours[1],cv2.FILLED)
-                
-                if self.limits[0] < cx < self.limits[2] and self.limits[1]-20 < cy < self.limits[1]+20:
-                    if self.bus_count.count(id) == 0:
-                        self.bus_count.append(id)
-                        cv2.line(img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,0,255),5)
+
+    def select_class(self,detections,class_name,conf,x1,x2,y1,y2,color=(0,0,0)):
+        cvzone.putTextRect(self.img,f'{class_name}: {conf}',(max(0,x1),max(35,y1-10)),
+                            scale=1,thickness=2,offset=3,colorR=color)
+        current_array = np.array([x1,y1,x2,y2,conf])
+        detections = np.vstack((detections,current_array))
+        return detections
+
+
+    def detection_count(self,results_tracker, count, color):
+        for result in results_tracker:
+            x1,y1,x2,y2,id = result
+            x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
+            w, h = x2-x1,y2-y1
+            cvzone.cornerRect(self.img,(x1,y1,w,h),l=10,rt=5, colorR=color, colorC=color)
+            
+            cx, cy = x1+w//2, y1+h//2
+            cv2.circle(self.img,(cx,cy),5,color,cv2.FILLED)
+            
+            if self.limits[0] < cx < self.limits[2] and self.limits[1]-20 < cy < self.limits[1]+20:
+                if count.count(id) == 0:
+                    count.append(id)
+                    cv2.line(self.img,(self.limits[0],self.limits[1]),(self.limits[2],self.limits[3]),(0,0,255),5)
+
 
 if __name__ == '__main__':
     pro =  AiCountDrive()
